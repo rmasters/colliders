@@ -1,0 +1,273 @@
+<!doctype html>
+<html>
+    <head>
+        <title>Collider #1</title>
+        <style>
+            * { box-sizing: border-box; }
+            html { height: 100%; }
+            body {
+                background: #aaa;
+                padding: 0.50em;
+            }
+            .container { position: relative; }
+            #arena {
+                background: #555;
+                border: 5px solid #fff;
+                box-shadow: inset 0 0 0.50em #000;
+            }
+            #scores {
+                position: absolute;
+                right: 0;
+                top: 0;
+                width: 100px;
+                background: red;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="status"></div><div id="fps"></div>
+        <div class="container"><canvas id="arena" height="600" width="1200"></canvas></div>
+        <table id="scores"></table>
+        <script>
+            var status_txt = document.getElementById('status');
+
+            var canvas = document.getElementById('arena');
+            if (canvas.getContext) {
+                var ctx = canvas.getContext('2d');
+                } else {
+                alert('Your browser doesn\'t support canvas');
+            }
+
+            var MAX_SPEED = 10;
+            var MAX_SIZE = 20;
+            var MIN_SIZE = 2;
+            var SHIP_SIZE = 15;
+            var ARENA_PADDING = 10;
+            var COLLISION_ACCURACY = 5;
+
+            var HOMING_ENABLED = false;
+            var HOMING_DISTANCE = 100;
+
+
+            function Color(r, g, b) {
+                this.r = r;
+                this.g = g;
+                this.b = b;
+            }
+
+            function Ship(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+
+                this.lastX = 0;
+                this.lastY = 0;
+
+                this.speedX = 0;
+                this.speedY = 0;
+                this.maxSpeed = MAX_SPEED;
+                this.size = SHIP_SIZE;
+
+                this.points = 0;
+            }
+
+            Ship.prototype.speedUpX = function(val) {
+                if (val == 1) {
+                    this.speedX = Math.min(this.speedX + 1, 1 * this.maxSpeed);
+                }
+                if (val == -1) {
+                    this.speedX = Math.max(this.speedX - 1, -1 * this.maxSpeed);
+                }
+            };
+            Ship.prototype.speedUpY = function(val) {
+                if (val == 1) {
+                    this.speedY = Math.min(this.speedY + 1, 1 * this.maxSpeed);
+                }
+                if (val == -1) {
+                    this.speedY = Math.max(this.speedY - 1, -1 * this.maxSpeed);
+                }
+            };
+
+            Ship.prototype.speedUpLeft = function() { this.speedUpX(-1); }
+            Ship.prototype.speedUpRight = function() { this.speedUpX(1); }
+            Ship.prototype.speedUpUp = function() { this.speedUpY(-1); }
+            Ship.prototype.speedUpDown = function() { this.speedUpY(1); }
+
+            Ship.prototype.slowDownX = function () {
+                if (this.speedX > 0) this.speedX--;
+                if (this.speedX < 0) this.speedX++;
+            };
+            Ship.prototype.slowDownY = function () {
+                if (this.speedY > 0) this.speedY--;
+                if (this.speedY < 0) this.speedY++;
+            };
+
+            Ship.prototype.draw = function() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI*2, false);
+                ctx.fillStyle = 'rgb(' + this.color.r + ',' + this.color.g + ',' + this.color.b + ')';
+                ctx.fill();
+                ctx.closePath();
+
+                // Marker dot
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 2, 0, Math.PI*2, false);
+                ctx.fillStyle = 'rgb(255, 255, 255)';
+                ctx.fill();
+                ctx.closePath();
+            };
+
+            Ship.prototype.update = function() {
+                this.lastX = this.x; this.lastY = this.y;
+
+                this.x = Math.min(Math.max(this.x + this.speedX, 0 + this.size + ARENA_PADDING), canvas.width - this.size - ARENA_PADDING);
+                this.y = Math.min(Math.max(this.y + this.speedY, 0 + this.size + ARENA_PADDING), canvas.height - this.size - ARENA_PADDING);
+            };
+
+            Ship.prototype.stat = function() {
+                return 'Pos: ' + this.x + ',' + this.y + ' Speed: ' + this.speedX + ',' + this.speedY + ' Max speed: ' + this.maxSpeed;
+            };
+
+            Ship.prototype.collided = function(otherShip) {
+                var dx = this.x - otherShip.x;
+                var dy = this.y - otherShip.y;
+                var dist = this.size + otherShip.size;
+                return dx*dx + dy*dy <= dist*dist + COLLISION_ACCURACY;
+            };
+
+            Ship.prototype.vector = function() {
+                return {x: this.lastX-this.x, y: this.lastY-this.y};
+            };
+
+            Ship.prototype.increaseSize = function () {
+                if (this.size < MAX_SIZE) {
+                    this.size += 1;
+                }
+                this.points++;
+            };
+            Ship.prototype.decreaseSize = function () {
+                if (this.size > MIN_SIZE) {
+                    this.size -= 1;
+                }
+                this.points--;
+            };
+
+            var ships = [];
+            ships[0] = new Ship(canvas.width/2, canvas.height/2, new Color(0, 0, 0));
+
+            for (var i = 1; i < 100; i++) {
+                var color = new Color(Math.round(Math.random() * 255), Math.round(Math.random() * 255), Math.round(Math.random() * 255));
+                ships[i] = new Ship(Math.floor(Math.random() * canvas.width-SHIP_SIZE), Math.floor(Math.random() * canvas.height-SHIP_SIZE), color);
+            }
+
+            var up_pressed = false;
+            var left_pressed = false;
+            var down_pressed = false;
+            var right_pressed = false;
+
+            var size = 5;
+
+            var fps = 0;
+            function main() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                for (var i = 0; i < ships.length; i++) {
+                    ships[i].update();
+                    ships[i].draw();
+                }
+
+                for (var i = 0; i < ships.length; i++) {
+                    for (var j = 1; j < ships.length; j++) {
+                        if (i == j) continue;
+
+                        if (ships[i].collided(ships[j])) {
+                            ships[i].increaseSize();
+                            ships[i].points += ships[j].points;
+                            ships.splice(j, 1);
+                        }
+                    }
+                }
+                var scores_tbl = document.getElementById('scores');
+                while (scores_tbl.hasChildNodes()) { scores_tbl.removeChild(scores_tbl.lastChild); }
+                for (var i = 0; i < ships.length; i++) {
+                    var row = document.createElement('tr');
+                    var name = document.createElement('td'); name.appendChild(document.createTextNode('Ship #' + i));
+                    var score = document.createElement('td'); score.appendChild(document.createTextNode(ships[i].points));
+                    row.appendChild(name);
+                    row.appendChild(score);
+                    scores_tbl.appendChild(row);
+                }
+
+                // Move user ship
+                if (up_pressed) ships[0].speedUpUp();
+                if (down_pressed) ships[0].speedUpDown();
+                if (left_pressed) ships[0].speedUpLeft();
+                if (right_pressed) ships[0].speedUpRight();
+
+                if (!up_pressed && !down_pressed) ships[0].slowDownY();
+                if (!left_pressed && !right_pressed) ships[0].slowDownX();
+
+                status_txt.innerHTML = ships[0].stat();
+
+                // Move AI
+                for (var i = 1; i < ships.length; i++) {
+                    var x_diff = Math.abs(ships[0].x - ships[i].x);
+                    var y_diff = Math.abs(ships[0].y - ships[i].y);
+
+                    if (HOMING_ENABLED && x_diff < HOMING_DISTANCE && y_diff < HOMING_DISTANCE) {
+                            if (ships[0].x < ships[i].x) {
+                                ships[i].speedUpLeft();
+                                } else if (ships[0].x > ships[i].x) {
+                                ships[i].speedUpRight();
+                            }
+                            if (ships[0].y < ships[i].y) {
+                                ships[i].speedUpUp();
+                                } else if (ships[0].y > ships[i].y) {
+                                ships[i].speedUpDown();
+                            }
+                        } else {
+                        var direction = Math.random();
+                        if (direction < 0.25) {
+                            ships[i].speedUpUp();
+                            } else if (direction < 0.5) {
+                            ships[i].speedUpRight();
+                            } else if (direction < 0.75) {
+                            ships[i].speedUpDown();
+                            } else {
+                            ships[i].speedUpLeft();
+                        }
+                    }
+                }
+
+                window.setTimeout('main()', 1);
+                fps++;
+            }
+
+            function my_fps() {
+                document.getElementById('fps').innerHTML = 'FPS: ' + fps;
+                fps = 0;
+                window.setTimeout('my_fps()', 1000);
+            }
+            my_fps();
+
+            window.onkeydown = function (e) {
+                var code = e.keyCode ? e.keyCode : e.which;
+                if (code == 37) left_pressed = true;
+                if (code == 38) up_pressed = true;
+                if (code == 39) right_pressed = true;
+                if (code == 40) down_pressed = true;
+            };
+
+            window.onkeyup = function (e) {
+                var code = e.keyCode ? e.keyCode : e.which;
+                if (code == 37) left_pressed = false;
+                if (code == 38) up_pressed = false;
+                if (code == 39) right_pressed = false;
+                if (code == 40) down_pressed = false;
+            };
+
+            main();
+
+        </script>
+    </body>
+</html>
